@@ -110,6 +110,10 @@
                         </option>
                       </b-select>
                     </b-field>
+                    <b-field :label="$t('campaigns.dailyQuota')" label-position="on-border">
+                      <b-input v-model.number="form.dailyQuota" name="daily_quota" :disabled="!canEdit" type="number"
+                        min="0" placeholder="Leave empty for unlimited" />
+                    </b-field>
                   </div>
                 </div>
 
@@ -383,6 +387,7 @@ export default Vue.extend({
         archiveMetaStr: '{}',
         archiveMeta: {},
         testEmails: [],
+        dailyQuota: null,
       },
     };
   },
@@ -471,6 +476,12 @@ export default Vue.extend({
         }
       }
 
+      // Validate daily quota (must be non-negative integer or empty).
+      if (this.form.dailyQuota !== null && this.form.dailyQuota !== '' && (!Number.isInteger(this.form.dailyQuota) || this.form.dailyQuota < 0)) {
+        this.$utils.toast('daily_quota must be a non-negative integer', 'is-danger');
+        return;
+      }
+
       switch (typ) {
         case 'create':
           this.createCampaign();
@@ -548,6 +559,7 @@ export default Vue.extend({
         messenger: this.form.messenger,
         type: 'regular',
         tags: this.form.tags,
+        daily_quota: this.form.dailyQuota !== null && this.form.dailyQuota !== '' ? Number(this.form.dailyQuota) : null,
         send_at: this.form.sendLater ? this.form.sendAtDate : null,
         headers: this.form.headers,
         media: this.form.media.map((m) => m.id),
@@ -569,6 +581,7 @@ export default Vue.extend({
         messenger: this.form.messenger,
         type: 'regular',
         tags: this.form.tags,
+        daily_quota: this.form.dailyQuota !== null && this.form.dailyQuota !== '' ? Number(this.form.dailyQuota) : null,
         send_at: this.form.sendLater ? this.form.sendAtDate : null,
         headers: this.form.headers,
         template_id: this.form.content.templateId,

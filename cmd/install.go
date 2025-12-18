@@ -261,6 +261,7 @@ func installCampaign(campTplID, archiveTplID int, q *models.Queries) {
 		json.RawMessage("[]"),
 		pq.StringArray{"test-campaign"},
 		emailMsgr,
+		nil,
 		campTplID,
 		pq.Int64Array{1},
 		false,

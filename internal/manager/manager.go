@@ -39,6 +39,12 @@ type Store interface {
 	GetAttachment(mediaID int) (models.Attachment, error)
 	UpdateCampaignStatus(campID int, status string) error
 	UpdateCampaignCounts(campID int, toSend int, sent int, lastSubID int) error
+	// GetCampaignHourlySent returns the number of messages recorded as sent for the given
+	// campaign in the UTC date/hour corresponding to the provided timestamp.
+	GetCampaignHourlySent(campID int, ts time.Time) (int, error)
+	// IncrementCampaignHourlySent atomically increments the sent count for the given
+	// campaign UTC date/hour (derived from ts) and returns the updated count.
+	IncrementCampaignHourlySent(campID int, ts time.Time) (int, error)
 	CreateLink(url string) (string, error)
 	BlocklistSubscriber(id int64) error
 	DeleteSubscriber(id int64) error
@@ -517,6 +523,16 @@ func (m *Manager) worker() {
 					}
 					msg.pipe.rate.Incr(1)
 					msg.pipe.sent.Add(1)
+
+					// Record the successful send in the campaign hourly counter (UTC).
+					// If the DB update fails, log it. Regardless of DB result, decrement the in-memory
+					// scheduled counter for this pipe so future scheduling accounts for already-sent messages.
+					if _, ierr := m.store.IncrementCampaignHourlySent(msg.Campaign.ID, time.Now().UTC()); ierr != nil {
+						m.log.Printf("error incrementing campaign hourly counter (%s): %v", msg.Campaign.Name, ierr)
+					}
+					if msg.pipe.scheduled.Load() > 0 {
+						msg.pipe.scheduled.Add(-1)
+					}
 				}
 			}
 

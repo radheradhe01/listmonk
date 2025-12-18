@@ -685,6 +685,11 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		return c, errors.New(a.i18n.Ts("campaigns.fieldInvalidMessenger", "name", c.Messenger))
 	}
 
+	// Validate per-campaign daily quota if present. It must be a non-negative integer.
+	if c.DailyQuota.Valid && c.DailyQuota.Int < 0 {
+		return c, errors.New("daily_quota must be a non-negative integer")
+	}
+
 	camp := models.Campaign{Body: c.Body, TemplateBody: tplTag}
 	if err := c.CompileTemplate(a.manager.TemplateFuncs(&camp)); err != nil {
 		return c, errors.New(a.i18n.Ts("campaigns.fieldInvalidBody", "error", err.Error()))

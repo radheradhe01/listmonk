@@ -90,7 +90,7 @@ build-email-builder: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
 # Run the JS frontend server in dev mode.
 .PHONY: run-frontend
 run-frontend: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
-	export VUE_APP_VERSION="${VERSION}" && cd frontend && $(YARN) dev
+	export VUE_APP_VERSION="${VERSION}" && cd frontend && HOST=0.0.0.0 $(YARN) dev --host 0.0.0.0
 
 # Run Go tests.
 .PHONY: test
@@ -145,4 +145,11 @@ rm-dev-docker: build ## Delete the docker containers including DB volumes.
 .PHONY: init-dev-docker
 init-dev-docker: build-dev-docker ## Delete the docker containers including DB volumes.
 	cd dev; \
-	docker compose run --rm backend sh -c "make dist && ./listmonk --install --idempotent --yes --config dev/config.toml"
+	docker compose run --rm backend sh -c "rm -f listmonk && make dist && ./listmonk --install --idempotent --yes --config dev/config.toml"
+
+# Upgrade the database schema for dev docker suite.
+.PHONY: upgrade-dev-docker
+upgrade-dev-docker: build-dev-docker ## Run pending DB migrations in the dev backend container.
+	cd dev; \
+	docker compose run --rm front sh -c "cd frontend && yarn install && yarn build"; \
+	docker compose run --rm backend sh -c "rm -f listmonk && make dist && ./listmonk --upgrade --yes --config dev/config.toml"

@@ -1,0 +1,127 @@
+{
+  "root": {
+    "type": "EmailLayout",
+    "data": {
+      "backdropColor": "#F0F1F3",
+      "canvasColor": "#FFFFFF",
+      "textColor": "#262626",
+      "fontFamily": "MODERN_SANS",
+      "childrenIds": [
+        "block-heading",
+        "block-intro",
+        "block-body",
+        "block-list",
+        "block-outro",
+        "block-signature"
+      ]
+    }
+  },
+
+  "block-heading": {
+    "type": "Heading",
+    "data": {
+      "props": {
+        "text": "Dear Sir/Madam,",
+        "level": "h3"
+      },
+      "style": {
+        "padding": {
+          "top": 24,
+          "bottom": 12,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  },
+
+  "block-intro": {
+    "type": "Text",
+    "data": {
+      "props": {
+        "markdown": true,
+        "text": "I hope this message finds you well."
+      },
+      "style": {
+        "padding": {
+          "top": 0,
+          "bottom": 12,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  },
+
+  "block-body": {
+    "type": "Text",
+    "data": {
+      "props": {
+        "markdown": true,
+        "text": "**Dial Phone Limited** is a global wholesale VoIP carrier providing A–Z CC voice termination, with a strong focus on **Canada CC routes**, supported by Tier-1 network quality and consistent performance."
+      },
+      "style": {
+        "padding": {
+          "top": 0,
+          "bottom": 12,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  },
+
+  "block-list": {
+    "type": "Text",
+    "data": {
+      "props": {
+        "markdown": true,
+        "text": "**Our core capabilities include:**\n\n- Stable, high-quality wholesale voice routing\n- 24/7 Network Operations Center (NOC) support\n- Competitive and transparent wholesale pricing"
+      },
+      "style": {
+        "padding": {
+          "top": 0,
+          "bottom": 12,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  },
+
+  "block-outro": {
+    "type": "Text",
+    "data": {
+      "props": {
+        "markdown": true,
+        "text": "We are currently interconnected with leading international carriers and are selectively expanding our partner network. We would welcome the opportunity to explore potential interconnection and commercial cooperation.\n\nIf of interest, I would be pleased to share technical specifications, traffic profiles, and commercial terms at your convenience."
+      },
+      "style": {
+        "padding": {
+          "top": 0,
+          "bottom": 12,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  },
+
+  "block-signature": {
+    "type": "Text",
+    "data": {
+      "props": {
+        "markdown": true,
+        "text": "**Kind regards,**\n\n**Logan Blake**  \nSales Executive  \n**Dial Phone Limited**  \n[www.dialphone.ai](https://www.dialphone.ai)  \n160 Old Tower Hill Road, Wakefield, RI 02879"
+      },
+      "style": {
+        "padding": {
+          "top": 8,
+          "bottom": 24,
+          "right": 24,
+          "left": 24
+        }
+      }
+    }
+  }
+}

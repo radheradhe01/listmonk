@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/gofrs/uuid/v5"
 	"github.com/knadh/listmonk/internal/core"
 	"github.com/knadh/listmonk/internal/manager"
@@ -83,6 +85,32 @@ func (s *store) UpdateCampaignStatus(campID int, status string) error {
 func (s *store) UpdateCampaignCounts(campID int, toSend int, sent int, lastSubID int) error {
 	_, err := s.queries.UpdateCampaignCounts.Exec(campID, toSend, sent, lastSubID)
 	return err
+}
+
+// GetCampaignHourlySent returns the number of messages recorded as sent for the given
+// campaign in the UTC date/hour derived from ts.
+func (s *store) GetCampaignHourlySent(campID int, ts time.Time) (int, error) {
+	date := ts.UTC().Format("2006-01-02")
+	hour := ts.UTC().Hour()
+
+	var count int
+	if err := s.queries.GetCampaignHourlySent.Get(&count, campID, date, hour); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// IncrementCampaignHourlySent atomically increments the sent_count for the campaign/date/hour
+// derived from ts and returns the updated count.
+func (s *store) IncrementCampaignHourlySent(campID int, ts time.Time) (int, error) {
+	date := ts.UTC().Format("2006-01-02")
+	hour := ts.UTC().Hour()
+
+	var newCount int
+	if err := s.queries.IncrementCampaignHourlySent.Get(&newCount, campID, date, hour); err != nil {
+		return 0, err
+	}
+	return newCount, nil
 }
 
 // GetAttachment fetches a media attachment blob.

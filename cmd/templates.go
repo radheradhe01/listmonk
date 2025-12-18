@@ -4,7 +4,6 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -27,9 +26,7 @@ const (
 		<p>Here is a link to <a href="https://listmonk.app" target="_blank">listmonk</a>.</p>`
 )
 
-var (
-	regexpTplTag = regexp.MustCompile(`{{(\s+)?template\s+?"content"(\s+)?\.(\s+)?}}`)
-)
+// regexpTplTag removed - content placeholder is no longer enforced here
 
 // GetTemplate handles the retrieval of a template
 func (a *App) GetTemplate(c echo.Context) error {
@@ -90,10 +87,7 @@ func (a *App) PreviewTemplateBody(c echo.Context) error {
 		tpl.Type = models.TemplateTypeCampaign
 	}
 
-	if tpl.Type == models.TemplateTypeCampaign && !regexpTplTag.MatchString(tpl.Body) {
-		return echo.NewHTTPError(http.StatusBadRequest,
-			a.i18n.Ts("templates.placeholderHelp", "placeholder", tplTag))
-	}
+	// Allow previewing campaign templates without explicit content placeholder.
 
 	// Render the template.
 	out, err := a.previewTemplate(tpl)
@@ -216,10 +210,9 @@ func (a *App) validateTemplate(o models.Template) error {
 		return errors.New(a.i18n.T("campaigns.fieldInvalidName"))
 	}
 
-	if o.Type == models.TemplateTypeCampaign && !regexpTplTag.MatchString(o.Body) {
-		return echo.NewHTTPError(http.StatusBadRequest,
-			a.i18n.Ts("templates.placeholderHelp", "placeholder", tplTag))
-	}
+	// Campaign templates are allowed to omit an explicit content placeholder.
+	// The campaign compilation will append the placeholder automatically if missing
+	// so the campaign body will still be rendered.
 
 	if o.Type == models.TemplateTypeTx && strings.TrimSpace(o.Subject) == "" {
 		return echo.NewHTTPError(http.StatusBadRequest,

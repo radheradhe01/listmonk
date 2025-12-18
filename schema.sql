@@ -121,6 +121,9 @@ CREATE TABLE campaigns (
     max_subscriber_id  INT NOT NULL DEFAULT 0,
     last_subscriber_id INT NOT NULL DEFAULT 0,
 
+    -- Per-campaign daily send quota limit (NULL means unlimited).
+    daily_quota         INT NULL,
+
     -- Publishing.
     archive             BOOLEAN NOT NULL DEFAULT false,
     archive_slug        TEXT NULL UNIQUE,
@@ -163,6 +166,17 @@ CREATE TABLE campaign_views (
 DROP INDEX IF EXISTS idx_views_camp_id; CREATE INDEX idx_views_camp_id ON campaign_views(campaign_id);
 DROP INDEX IF EXISTS idx_views_subscriber_id; CREATE INDEX idx_views_subscriber_id ON campaign_views(subscriber_id);
 DROP INDEX IF EXISTS idx_views_date; CREATE INDEX idx_views_date ON campaign_views((TIMEZONE('UTC', created_at)::DATE));
+
+-- Table to track per-campaign hourly sent counts used for enforcing per-hour quotas.
+DROP TABLE IF EXISTS campaign_send_quota CASCADE;
+CREATE TABLE campaign_send_quota (
+    campaign_id  INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    date         DATE NOT NULL,
+    hour         SMALLINT NOT NULL,
+    sent_count   INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (campaign_id, date, hour)
+);
+DROP INDEX IF EXISTS idx_campaign_send_quota; CREATE INDEX idx_campaign_send_quota ON campaign_send_quota(campaign_id, date, hour);
 
 -- media
 DROP TABLE IF EXISTS media CASCADE;

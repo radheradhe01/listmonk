@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"regexp"
 	"strings"
 	txttpl "text/template"
 
@@ -31,6 +32,10 @@ const (
 	CampaignContentTypeVisual   = "visual"
 )
 
+// reContentTpl matches the template placeholder used to inject campaign body
+// into a base template: {{ template "content" . }}
+var reContentTpl = regexp.MustCompile(`{{\s*template\s+"content"\s*\.\s*}}`)
+
 // Campaigns represents a slice of Campaigns.
 type Campaigns []Campaign
 
@@ -54,6 +59,7 @@ type Campaign struct {
 	Headers           Headers         `db:"headers" json:"headers"`
 	TemplateID        null.Int        `db:"template_id" json:"template_id"`
 	Messenger         string          `db:"messenger" json:"messenger"`
+	DailyQuota        null.Int        `db:"daily_quota" json:"daily_quota"`
 	Archive           bool            `db:"archive" json:"archive"`
 	ArchiveSlug       null.String     `db:"archive_slug" json:"archive_slug"`
 	ArchiveTemplateID null.Int        `db:"archive_template_id" json:"archive_template_id"`
@@ -151,10 +157,18 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	}
 
 	// Compile the base template.
+	//
+	// If a template body is not provided we default to a simple content-only
+	// template. If a template body is provided but does not include the
+	// content placeholder ({{ template "content" . }}), append the placeholder
+	// so the campaign body is included when rendering.
 	body := c.TemplateBody
 
 	if body == "" || c.ContentType == CampaignContentTypeVisual {
 		body = `{{ template "content" . }}`
+	} else if !reContentTpl.MatchString(body) {
+		// Append the content placeholder if missing so that campaign Body is rendered.
+		body = body + "\n" + `{{ template "content" . }}`
 	}
 
 	for _, r := range regTplFuncs {
