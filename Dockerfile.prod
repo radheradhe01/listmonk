@@ -1,0 +1,45 @@
+# Build the backend and frontend, then bundle everything into a production-ready image.
+# This uses a multi-stage build to keep the final image small.
+
+# Stage 1: Build the frontend
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/yarn.lock ./
+RUN yarn install --frozen-lockfile
+COPY frontend/ ./
+RUN yarn build
+
+# Stage 2: Build the email-builder
+FROM node:18-alpine AS email-builder-builder
+WORKDIR /app/frontend/email-builder
+COPY frontend/email-builder/package.json frontend/email-builder/yarn.lock ./
+RUN yarn install --frozen-lockfile
+COPY frontend/email-builder/ ./
+RUN yarn build
+
+# Stage 3: Build the Go backend
+FROM golang:1.24-alpine AS backend-builder
+RUN apk add --no-cache git make
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Copy frontend builds to the correct location for bundling
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+COPY --from=email-builder-builder /app/frontend/email-builder/dist /app/frontend/frontend/public/static/email-builder
+# Build the binary with stuffbin bundling
+RUN go install github.com/knadh/stuffbin/...
+RUN CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w -X 'main.versionString=v5.4.1'" cmd/*.go
+RUN /go/bin/stuffbin -a listmonk config.toml.sample schema.sql queries:/queries permissions.json static/public:/public static/email-templates frontend/dist:/admin i18n:/i18n
+
+# Stage 4: Final production image
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates tzdata shadow su-exec
+WORKDIR /listmonk
+COPY --from=backend-builder /app/listmonk .
+COPY --from=backend-builder /app/config.toml.sample config.toml
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+EXPOSE 9000
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["./listmonk"]

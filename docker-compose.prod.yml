@@ -1,0 +1,47 @@
+services:
+  app:
+    image: radheradhe01/listmonk:latest
+    container_name: listmonk_app
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    networks:
+      - listmonk
+    depends_on:
+      db:
+        condition: service_healthy
+    command: [sh, -c, "sleep 10 && ./listmonk --install --idempotent --yes && ./listmonk --upgrade --yes && ./listmonk"]
+    environment:
+      - LISTMONK_app__address=0.0.0.0:9000
+      - LISTMONK_db__host=db
+      - LISTMONK_db__user=listmonk
+      - LISTMONK_db__password=listmonk
+      - LISTMONK_db__database=listmonk
+      - LISTMONK_db__port=5432
+      - LISTMONK_db__ssl_mode=disable
+      - LISTMONK_app__root_url=http://localhost:9000
+    volumes:
+      - listmonk-uploads:/listmonk/uploads
+
+  db:
+    image: postgres:17-alpine
+    container_name: listmonk_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=listmonk
+      - POSTGRES_PASSWORD=listmonk
+      - POSTGRES_DB=listmonk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listmonk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - listmonk-data:/var/lib/postgresql/data
+
+networks:
+  listmonk:
+
+volumes:
+  listmonk-data:
+  listmonk-uploads:
