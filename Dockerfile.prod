@@ -17,6 +17,8 @@ RUN mkdir -p ../static/public/static
 COPY frontend/package.json frontend/yarn.lock ./
 RUN yarn install --frozen-lockfile
 COPY frontend/ ./
+# Copy .gitignore from root as it's required by the eslint command in prebuild
+COPY .gitignore ./
 # Copy email-builder build into the frontend public directory so it's included in the main build
 COPY --from=email-builder-builder /app/frontend/email-builder/dist ./public/static/email-builder
 RUN yarn build
