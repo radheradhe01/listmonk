@@ -135,6 +135,11 @@ dev-docker: build-dev-docker ## Build and spawns docker containers for the entir
 run-backend-docker: build-frontend
 	CGO_ENABLED=0 go run -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.frontendDir=frontend/dist'" cmd/*.go --config=dev/config.toml
 
+# Run the backend in docker-dev mode without building frontend (for development containers)
+.PHONY: run-backend-docker-no-frontend
+run-backend-docker-no-frontend:
+	CGO_ENABLED=0 go run -ldflags="-s -w -X 'main.buildString=${BUILDSTR}' -X 'main.versionString=${VERSION}' -X 'main.frontendDir=frontend/dist'" cmd/*.go --config=dev/config.toml
+
 # Tear down the complete local development docker suite.
 .PHONY: rm-dev-docker
 rm-dev-docker: build ## Delete the docker containers including DB volumes.

@@ -58,7 +58,7 @@ services:
     build:
       context: ../
       dockerfile: dev/app.Dockerfile
-    command: ["make", "run-backend-docker"]
+    command: ["make", "run-backend-docker-no-frontend"]
     ports:
       - "9000:9000"
     depends_on:
