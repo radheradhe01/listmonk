@@ -24,14 +24,14 @@ WITH tpl AS (
 ),
 camp AS (
     INSERT INTO campaigns (uuid, type, name, subject, from_email, body, altbody,
-        content_type, send_at, headers, tags, messenger, daily_quota, template_id, to_send,
+        content_type, send_at, headers, tags, messenger, daily_quota, send_interval, template_id, to_send,
         max_subscriber_id, archive, archive_slug, archive_template_id, archive_meta, body_source)
         SELECT $1, $2, $3, $4, $5,
             -- body
             COALESCE(NULLIF($6, ''), (SELECT body FROM tpl), ''),
             $7,
             $8::content_type,
-            $9, $10, $11, $12, $13,
+            $9, $10, $11, $12, $13, $22,
             (SELECT id FROM tpl),
             0,
             0,
@@ -374,6 +374,7 @@ WITH camp AS (
             tags=$10::VARCHAR(100)[],
             messenger=$11,
             daily_quota=$12,
+            send_interval=$21,
             -- template_id shouldn't be saved for visual campaigns.
             template_id=(CASE WHEN $7::content_type = 'visual' THEN NULL ELSE $13::INT END),
             archive=$15,

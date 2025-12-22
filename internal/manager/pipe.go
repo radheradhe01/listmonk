@@ -36,6 +36,8 @@ type pipe struct {
 	scheduledHour atomic.Int64
 
 	m *Manager
+	lastScheduledAt time.Time
+	lastSchedMut    sync.Mutex
 }
 
 // newPipe adds a campaign to the process queue.
@@ -63,7 +65,8 @@ func (m *Manager) newPipe(c *models.Campaign) (*pipe, error) {
 		wg:   &sync.WaitGroup{},
 		m:    m,
 		// buffered queue to avoid blocking the DB fetcher; size tuned to batch size.
-		schedQ: make(chan scheduledMessage, m.cfg.BatchSize*2),
+		schedQ:          make(chan scheduledMessage, m.cfg.BatchSize*2),
+		lastScheduledAt: time.Now(),
 	}
 
 	// Increment the waitgroup so that Wait() blocks immediately. This is necessary
@@ -161,6 +164,18 @@ func (p *pipe) NextSubscribers() (bool, error) {
 	// Determine if the campaign has a per-day quota.
 	hasQuota := p.camp.DailyQuota.Valid && p.camp.DailyQuota.Int > 0
 
+	// Determine if the campaign has a send interval.
+	var (
+		hasInterval bool
+		interval    time.Duration
+	)
+	if p.camp.SendInterval.Valid && p.camp.SendInterval.String != "" {
+		if d, err := time.ParseDuration(p.camp.SendInterval.String); err == nil && d > 0 {
+			hasInterval = true
+			interval = d
+		}
+	}
+
 	now := time.Now().UTC()
 
 	// If there's a per-campaign daily quota, compute per-hour allowance and
@@ -229,47 +244,61 @@ func (p *pipe) NextSubscribers() (bool, error) {
 		return false, nil
 	}
 
-	// If quota is configured, schedule messages evenly over the remainder of the hour.
-	if hasQuota {
+	// If quota is configured, or a send interval is configured, schedule messages.
+	if hasQuota || hasInterval {
 		now := time.Now().UTC()
 
-		// Recompute allowance (best-effort) and spacing across the rest of the hour.
-		sentThisHour, _ := p.m.store.GetCampaignHourlySent(p.camp.ID, now)
-		perHour := (p.camp.DailyQuota.Int + 23) / 24
-		remaining := perHour - sentThisHour - int(p.scheduled.Load())
-		if remaining <= 0 {
-			// guard in case DB changed between checks
-			return false, nil
-		}
-		if remaining < len(subs) {
-			remaining = len(subs)
-		}
-
-		nextHour := time.Date(now.Year(), now.Month(), now.Day(), now.Hour()+1, 0, 0, 0, time.UTC)
-		rest := nextHour.Sub(now)
-
 		var spacing time.Duration
-		if remaining > 0 {
-			spacing = time.Duration(int64(rest) / int64(remaining))
+		if hasInterval {
+			spacing = interval
+		} else {
+			// Recompute allowance (best-effort) and spacing across the rest of the hour.
+			sentThisHour, _ := p.m.store.GetCampaignHourlySent(p.camp.ID, now)
+			perHour := (p.camp.DailyQuota.Int + 23) / 24
+			remaining := perHour - sentThisHour - int(p.scheduled.Load())
+			if remaining <= 0 {
+				// guard in case DB changed between checks
+				return false, nil
+			}
+			if remaining < len(subs) {
+				remaining = len(subs)
+			}
+
+			nextHour := time.Date(now.Year(), now.Month(), now.Day(), now.Hour()+1, 0, 0, 0, time.UTC)
+			rest := nextHour.Sub(now)
+
+			if remaining > 0 {
+				spacing = time.Duration(int64(rest) / int64(remaining))
+			}
 		}
 
-		for i, s := range subs {
+		p.lastSchedMut.Lock()
+		defer p.lastSchedMut.Unlock()
+
+		for _, s := range subs {
 			msg, err := p.newMessage(s)
 			if err != nil {
 				p.m.log.Printf("error rendering message (%s) (%s): %v", p.camp.Name, s.Email, err)
 				continue
 			}
 
-			// Add a small jitter to spread exact times a bit.
-			var jitter time.Duration
-			if spacing > time.Second {
+			// If the last scheduled time is in the past, reset it to now.
+			if p.lastScheduledAt.Before(now) {
+				p.lastScheduledAt = now
+			}
+
+			// Add spacing to the last scheduled time.
+			scheduledAt := p.lastScheduledAt.Add(spacing)
+
+			// Add a small jitter to spread exact times a bit (only if not using a fixed interval).
+			if !hasInterval && spacing > time.Second {
 				jrange := int64(spacing / 10)
 				if jrange > 0 {
-					jitter = time.Duration(rand.Int63n(jrange) - jrange/2)
+					scheduledAt = scheduledAt.Add(time.Duration(rand.Int63n(jrange) - jrange/2))
 				}
 			}
 
-			scheduledAt := time.Now().Add(time.Duration(i)*spacing + jitter)
+			p.lastScheduledAt = scheduledAt
 
 			// Enqueue scheduled message.
 			p.schedQ <- scheduledMessage{msg: msg, at: scheduledAt}

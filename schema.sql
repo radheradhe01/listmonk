@@ -124,6 +124,9 @@ CREATE TABLE campaigns (
     -- Per-campaign daily send quota limit (NULL means unlimited).
     daily_quota         INT NULL,
 
+    -- Per-campaign send interval (e.g. '5s', '1m').
+    send_interval       TEXT NULL,
+
     -- Publishing.
     archive             BOOLEAN NOT NULL DEFAULT false,
     archive_slug        TEXT NULL UNIQUE,

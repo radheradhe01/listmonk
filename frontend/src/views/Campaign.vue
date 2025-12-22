@@ -112,7 +112,12 @@
                     </b-field>
                     <b-field :label="$t('campaigns.dailyQuota')" label-position="on-border">
                       <b-input v-model.number="form.dailyQuota" name="daily_quota" :disabled="!canEdit" type="number"
-                        min="0" placeholder="Leave empty for unlimited" />
+                        min="0" :placeholder="$t('campaigns.dailyQuotaPlaceholder')" />
+                    </b-field>
+                    <b-field :label="$t('campaigns.sendInterval')" label-position="on-border"
+                      :message="$t('campaigns.sendIntervalHelp')">
+                      <b-input v-model="form.sendInterval" name="send_interval" :disabled="!canEdit"
+                        :placeholder="$t('campaigns.sendIntervalPlaceholder')" />
                     </b-field>
                   </div>
                 </div>
@@ -388,6 +393,7 @@ export default Vue.extend({
         archiveMeta: {},
         testEmails: [],
         dailyQuota: null,
+        sendInterval: null,
       },
     };
   },
@@ -560,6 +566,7 @@ export default Vue.extend({
         type: 'regular',
         tags: this.form.tags,
         daily_quota: this.form.dailyQuota !== null && this.form.dailyQuota !== '' ? Number(this.form.dailyQuota) : null,
+        send_interval: this.form.sendInterval !== null && this.form.sendInterval !== '' ? this.form.sendInterval : null,
         send_at: this.form.sendLater ? this.form.sendAtDate : null,
         headers: this.form.headers,
         media: this.form.media.map((m) => m.id),
@@ -582,6 +589,7 @@ export default Vue.extend({
         type: 'regular',
         tags: this.form.tags,
         daily_quota: this.form.dailyQuota !== null && this.form.dailyQuota !== '' ? Number(this.form.dailyQuota) : null,
+        send_interval: this.form.sendInterval !== null && this.form.sendInterval !== '' ? this.form.sendInterval : null,
         send_at: this.form.sendLater ? this.form.sendAtDate : null,
         headers: this.form.headers,
         template_id: this.form.content.templateId,

@@ -60,6 +60,7 @@ type Campaign struct {
 	TemplateID        null.Int        `db:"template_id" json:"template_id"`
 	Messenger         string          `db:"messenger" json:"messenger"`
 	DailyQuota        null.Int        `db:"daily_quota" json:"daily_quota"`
+	SendInterval      null.String     `db:"send_interval" json:"send_interval"`
 	Archive           bool            `db:"archive" json:"archive"`
 	ArchiveSlug       null.String     `db:"archive_slug" json:"archive_slug"`
 	ArchiveTemplateID null.Int        `db:"archive_template_id" json:"archive_template_id"`
