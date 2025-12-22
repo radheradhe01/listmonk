@@ -35,7 +35,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Build the binary with stuffbin bundling
 RUN go install github.com/knadh/stuffbin/...
 RUN CGO_ENABLED=0 go build -o listmonk -ldflags="-s -w -X 'main.versionString=v5.4.1'" cmd/*.go
-RUN /go/bin/stuffbin -a listmonk config.toml.sample schema.sql queries:/queries permissions.json static/public:/public static/email-templates frontend/dist:/admin i18n:/i18n
+RUN /go/bin/stuffbin bundle -a listmonk config.toml.sample schema.sql queries:/queries permissions.json static/public:/public static/email-templates frontend/dist:/admin i18n:/i18n
 
 # Stage 4: Final production image
 FROM alpine:latest
