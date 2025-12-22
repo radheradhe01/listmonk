@@ -165,7 +165,7 @@
             </div>
             <hr />
 
-            <form @submit.prevent="() => doSMTPTest(item, n)">
+            <form @submit.prevent="() => doSMTPTest(item)">
               <div class="columns">
                 <template v-if="smtpTestItem === n">
                   <div class="column is-5">
@@ -181,7 +181,7 @@
                   </div>
                 </template>
                 <div class="column has-text-right">
-                  <b-button v-if="smtpTestItem === n" class="is-primary" @click.prevent="() => doSMTPTest(item, n)">
+                  <b-button v-if="smtpTestItem === n" class="is-primary" @click.prevent="() => doSMTPTest(item)">
                     {{ $t('settings.smtp.sendTest') }}
                   </b-button>
                   <a href="#" v-else class="is-primary" @click.prevent="showTestForm(n)">
@@ -216,7 +216,7 @@ import { regDuration } from '../../constants';
 
 const smtpTemplates = {
   gmail: {
-    host: 'smtp.gmail.com', port: 465, auth_protocol: 'login', tls_type: 'TLS',
+    host: 'smtp.gmail.com', port: 465, auth_protocol: 'plain', tls_type: 'TLS',
   },
   ses: {
     host: 'email-smtp.YOUR-REGION.amazonaws.com', port: 465, auth_protocol: 'login', tls_type: 'TLS',
@@ -300,15 +300,9 @@ export default Vue.extend({
       }
     },
 
-    doSMTPTest(item, n) {
+    doSMTPTest(item) {
       if (!this.isTestEnabled(item)) {
         this.$utils.toast(this.$t('settings.smtp.testEnterEmail'), 'is-danger');
-        this.$nextTick(() => {
-          const i = document.querySelector(`.password-${n}`);
-          this.data.smtp[n].password = '';
-          i.focus();
-          i.select();
-        });
         return;
       }
 
@@ -336,7 +330,7 @@ export default Vue.extend({
       if (!item.host || !item.port) {
         return false;
       }
-      if (item.auth_protocol !== 'none' && item.password.includes('•')) {
+      if (item.auth_protocol !== 'none' && !item.uuid && item.password.includes('•')) {
         return false;
       }
 

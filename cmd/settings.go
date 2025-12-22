@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,6 +21,7 @@ import (
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
 	"github.com/knadh/listmonk/internal/auth"
+	"github.com/knadh/listmonk/internal/manager"
 	"github.com/knadh/listmonk/internal/messenger/email"
 	"github.com/knadh/listmonk/internal/notifs"
 	"github.com/knadh/listmonk/models"
@@ -291,6 +293,18 @@ func (a *App) UpdateSettings(c echo.Context) error {
 		return err
 	}
 
+	// Re-initialize messengers with updated settings if no campaigns are running.
+	// This allows SMTP settings to take effect immediately without requiring a full restart.
+	if !a.manager.HasRunningCampaigns() {
+		if err := a.reloadMessengers(); err != nil {
+			a.log.Printf("error reloading messengers: %v", err)
+			// Continue with restart if reload fails
+		} else {
+			// Successfully reloaded messengers, no need for full restart
+			return c.JSON(http.StatusOK, okResp{true})
+		}
+	}
+
 	return a.handleSettingsRestart(c)
 }
 
@@ -339,6 +353,149 @@ func (a *App) handleSettingsRestart(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{true})
 }
 
+// reloadMessengers re-initializes messengers from the updated settings.
+// This allows SMTP settings to take effect immediately without requiring a full restart.
+func (a *App) reloadMessengers() error {
+	// Close old messengers.
+	for _, m := range a.messengers {
+		if err := m.Close(); err != nil {
+			a.log.Printf("error closing messenger %s: %v", m.Name(), err)
+		}
+	}
+
+	// Reload settings from DB to get updated SMTP config.
+	settings, err := a.core.GetSettings()
+	if err != nil {
+		return fmt.Errorf("error loading settings: %v", err)
+	}
+
+	// Re-initialize SMTP messengers.
+	var servers []email.Server
+	var newMsgrs []manager.Messenger
+
+	for _, s := range settings.SMTP {
+		if !s.Enabled {
+			continue
+		}
+
+		// Convert EmailHeaders from []map[string]string to map[string]string
+		// before marshaling, as email.Server expects map[string]string.
+		emailHeaders := make(map[string]string)
+		if len(s.EmailHeaders) > 0 && len(s.EmailHeaders[0]) > 0 {
+			emailHeaders = s.EmailHeaders[0]
+		}
+
+		// Create a temporary struct with the correct EmailHeaders type for marshaling.
+		type smtpTemp struct {
+			Name          string            `json:"name"`
+			Host          string            `json:"host"`
+			Port          int               `json:"port"`
+			AuthProtocol  string            `json:"auth_protocol"`
+			Username      string            `json:"username"`
+			Password      string            `json:"password"`
+			EmailHeaders  map[string]string `json:"email_headers"`
+			MaxConns      int               `json:"max_conns"`
+			MaxMsgRetries int               `json:"max_msg_retries"`
+			IdleTimeout   string            `json:"idle_timeout"`
+			WaitTimeout   string            `json:"wait_timeout"`
+			TLSType       string            `json:"tls_type"`
+			TLSSkipVerify bool              `json:"tls_skip_verify"`
+			HelloHostname string            `json:"hello_hostname"`
+		}
+
+		temp := smtpTemp{
+			Name:          s.Name,
+			Host:          s.Host,
+			Port:          s.Port,
+			AuthProtocol:  s.AuthProtocol,
+			Username:      s.Username,
+			Password:      s.Password,
+			EmailHeaders:  emailHeaders,
+			MaxConns:      s.MaxConns,
+			MaxMsgRetries: s.MaxMsgRetries,
+			IdleTimeout:   s.IdleTimeout,
+			WaitTimeout:   s.WaitTimeout,
+			TLSType:       s.TLSType,
+			TLSSkipVerify: s.TLSSkipVerify,
+			HelloHostname: s.HelloHostname,
+		}
+
+		// Convert to JSON and then unmarshal into email.Server
+		// This ensures proper handling of embedded smtppool.Opt fields.
+		sJSON, err := json.Marshal(temp)
+		if err != nil {
+			return fmt.Errorf("error marshaling SMTP settings: %v", err)
+		}
+
+		// Use koanf to unmarshal, similar to initSMTPMessengers.
+		koSrv := koanf.New(".")
+		if err := koSrv.Load(rawbytes.Provider(sJSON), koanfjson.Parser()); err != nil {
+			return fmt.Errorf("error loading SMTP config: %v", err)
+		}
+
+		var srv email.Server
+		if err := koSrv.UnmarshalWithConf("", &srv, koanf.UnmarshalConf{Tag: "json"}); err != nil {
+			return fmt.Errorf("error unmarshaling SMTP config: %v", err)
+		}
+
+		servers = append(servers, srv)
+		a.log.Printf("re-initialized email (SMTP) messenger: %s@%s", s.Username, s.Host)
+
+		// If the server has a name, initialize it as a standalone e-mail messenger.
+		if srv.Name != "" {
+			msgr, err := email.New(srv.Name, srv)
+			if err != nil {
+				return fmt.Errorf("error initializing e-mail messenger %s: %v", srv.Name, err)
+			}
+			newMsgrs = append(newMsgrs, msgr)
+		}
+	}
+
+	// Initialize the 'email' messenger with all SMTP servers.
+	if len(servers) > 0 {
+		msgr, err := email.New(email.MessengerName, servers...)
+		if err != nil {
+			return fmt.Errorf("error initializing e-mail messenger: %v", err)
+		}
+
+		// If it's just one server, return only the default "email" messenger.
+		if len(servers) == 1 {
+			newMsgrs = []manager.Messenger{msgr}
+		} else {
+			// If there are multiple servers, prepend the group "email" to be the first one.
+			newMsgrs = append([]manager.Messenger{msgr}, newMsgrs...)
+		}
+	}
+
+	// Re-initialize postback messengers from global ko config.
+	// Note: Postback messengers are loaded from config, not from DB settings,
+	// so we use the global ko variable.
+	postbackMsgrs := initPostbackMessengers(ko)
+	newMsgrs = append(newMsgrs, postbackMsgrs...)
+
+	// Clear old messengers from manager and add new ones.
+	a.manager.ClearMessengers()
+	for _, m := range newMsgrs {
+		if err := a.manager.AddMessenger(m); err != nil {
+			return fmt.Errorf("error adding messenger %s: %v", m.Name(), err)
+		}
+	}
+
+	// Update app's messenger list.
+	a.messengers = newMsgrs
+
+	// Update emailMsgr if it exists.
+	for _, m := range newMsgrs {
+		if m.Name() == "email" {
+			if em, ok := m.(*email.Emailer); ok {
+				a.emailMsgr = em
+			}
+		}
+	}
+
+	return nil
+}
+
 // GetLogs returns the log entries stored in the log buffer.
 func (a *App) GetLogs(c echo.Context) error {
 	return c.JSON(http.StatusOK, okResp{a.bufLog.Lines()})
@@ -364,6 +521,26 @@ func (a *App) TestSMTPSettings(c echo.Context) error {
 	if err := ko.UnmarshalWithConf("", &req, koanf.UnmarshalConf{Tag: "json"}); err != nil {
 		a.log.Printf("error scanning SMTP test request: %v", err)
 		return echo.NewHTTPError(http.StatusBadRequest, a.i18n.Ts("globals.messages.internalError"))
+	}
+
+	// UUID to fetch existing password if it's masked.
+	uuid := ko.String("uuid")
+	if uuid != "" && isMasked(req.Password) {
+		cur, err := a.core.GetSettings()
+		if err != nil {
+			return err
+		}
+
+		for _, s := range cur.SMTP {
+			if s.UUID == uuid {
+				req.Password = s.Password
+				break
+			}
+		}
+	}
+
+	if strings.HasSuffix(strings.ToLower(req.Host), "gmail.com") {
+		req.Password = strings.ReplaceAll(req.Password, " ", "")
 	}
 
 	to := ko.String("email")
@@ -393,10 +570,15 @@ func (a *App) TestSMTPSettings(c echo.Context) error {
 	m.To = []string{to}
 	m.Subject = a.i18n.T("settings.smtp.testConnection")
 	m.Body = b.Bytes()
+
+	a.log.Printf("sending test email from %s to %s via %s:%d", m.From, to, req.Host, req.Port)
+
 	if err := msgr.Push(m); err != nil {
+		a.log.Printf("error sending test email: %v", err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
+	a.log.Printf("test email sent successfully to %s", to)
 	return c.JSON(http.StatusOK, okResp{a.bufLog.Lines()})
 }
 
@@ -409,4 +591,8 @@ func (a *App) GetAboutInfo(c echo.Context) error {
 	out.System.OSMB = mem.Sys / 1024 / 1024
 
 	return c.JSON(http.StatusOK, out)
+}
+
+func isMasked(pwd string) bool {
+	return strings.Contains(pwd, pwdMask)
 }

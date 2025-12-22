@@ -20,6 +20,7 @@ export default defineConfig(({ _, mode }) => {
       assetsDir: 'static',
     },
     server: {
+      host: env.HOST || '0.0.0.0',
       port: env.LISTMONK_FRONTEND_PORT || 8080,
       proxy: {
         '^/$': {

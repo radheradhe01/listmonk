@@ -677,7 +677,7 @@ func (a *App) validateCampaignFields(c campReq) (campReq, error) {
 		}
 	}
 
-	if len(c.ListIDs) == 0 {
+	if len(c.ListIDs) == 0 && len(c.SubscriberEmails) == 0 {
 		return c, errors.New(a.i18n.T("campaigns.fieldInvalidListIDs"))
 	}
 

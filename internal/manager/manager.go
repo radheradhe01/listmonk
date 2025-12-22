@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -194,6 +195,29 @@ func (m *Manager) AddMessenger(msg Messenger) error {
 	m.messengers[id] = msg
 
 	return nil
+}
+
+// ReplaceMessenger replaces an existing messenger with a new one, closing the old one.
+func (m *Manager) ReplaceMessenger(msg Messenger) error {
+	id := msg.Name()
+	if old, ok := m.messengers[id]; ok {
+		// Close the old messenger.
+		if err := old.Close(); err != nil {
+			m.log.Printf("error closing old messenger %s: %v", id, err)
+		}
+	}
+	m.messengers[id] = msg
+	return nil
+}
+
+// ClearMessengers closes and removes all messengers.
+func (m *Manager) ClearMessengers() {
+	for id, msg := range m.messengers {
+		if err := msg.Close(); err != nil {
+			m.log.Printf("error closing messenger %s: %v", id, err)
+		}
+		delete(m.messengers, id)
+	}
 }
 
 // PushMessage pushes an arbitrary non-campaign Message to be sent out by the workers.
@@ -483,6 +507,18 @@ func (m *Manager) worker() {
 			h.Set(models.EmailHeaderCampaignUUID, msg.Campaign.UUID)
 			h.Set(models.EmailHeaderSubscriberUUID, msg.Subscriber.UUID)
 
+			// Professional headers.
+			h.Set("Date", time.Now().Format(time.RFC1123Z))
+			h.Set("MIME-Version", "1.0")
+
+			domain := "listmonk"
+			if m.cfg.RootURL != "" {
+				if u, err := url.Parse(m.cfg.RootURL); err == nil {
+					domain = u.Host
+				}
+			}
+			h.Set("Message-ID", fmt.Sprintf("<%s.%s@%s>", msg.Campaign.UUID, msg.Subscriber.UUID, domain))
+
 			// Attach List-Unsubscribe headers?
 			if m.cfg.UnsubHeader {
 				h.Set("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
@@ -505,6 +541,8 @@ func (m *Manager) worker() {
 			err := m.messengers[msg.Campaign.Messenger].Push(out)
 			if err != nil {
 				m.log.Printf("error sending message in campaign %s: subscriber %d: %v", msg.Campaign.Name, msg.Subscriber.ID, err)
+			} else {
+				m.log.Printf("sent message in campaign %s to subscriber %s", msg.Campaign.Name, msg.Subscriber.Email)
 			}
 
 			// Increment the send rate or the error counter if there was an error.
