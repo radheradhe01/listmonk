@@ -2,6 +2,8 @@ FROM golang:1.24.1 AS go
 
 FROM node:18 AS node
 
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
 COPY --from=go /usr/local/go /usr/local/go
 ENV GOPATH /go
 ENV CGO_ENABLED=0
