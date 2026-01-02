@@ -236,6 +236,13 @@ func (e *Emailer) Push(m models.Message) error {
 		return err
 	}
 
+	// CRITICAL: Properly terminate the SMTP session with QUIT
+	// Without this, Gmail may silently discard the email
+	if err := c.Quit(); err != nil {
+		log.Printf("DEBUG: FAILED to quit SMTP session: %v", err)
+		// Don't return error here as the message was already accepted
+	}
+
 	log.Printf("DEBUG: SMTP success sending to %s", recipientEmail)
 	return nil
 }
