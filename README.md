@@ -45,3 +45,34 @@ listmonk is free and open source software licensed under AGPLv3. If you are inte
 
 ## License
 listmonk is licensed under the AGPL v3 license.
+
+---
+
+## Custom Modifications (Crown Solutions Fork)
+
+### Email Tracking Configuration
+
+For email tracking (opens, clicks) to work correctly, the `app.root_url` setting must point to a publicly accessible URL.
+
+**Update via database:**
+```bash
+docker exec -it dev-db-1 psql -U listmonk-dev -d listmonk-dev -c \
+  "UPDATE settings SET value = '\"http://YOUR_PUBLIC_IP:9000\"' WHERE key = 'app.root_url';"
+
+# Restart backend
+docker compose restart backend
+```
+
+**Or via Admin UI:** Settings → General → Root URL
+
+### Gmail SMTP (Port 465) Fix
+
+This fork includes a fix for Gmail SMTP on port 465 (direct TLS). The standard Listmonk only supports port 587 (STARTTLS).
+
+**Changes made:**
+- `internal/messenger/email/email.go` - Added support for direct TLS connections on port 465
+- `models/campaigns.go` - Auto-inject tracking pixel for visual editor campaigns
+
+### Visual Campaign Tracking
+
+Visual editor campaigns now automatically include the tracking pixel (`{{ TrackView . }}`). No manual template modification required.
