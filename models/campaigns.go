@@ -166,7 +166,10 @@ func (c *Campaign) CompileTemplate(f template.FuncMap) error {
 	body := c.TemplateBody
 
 	if body == "" || c.ContentType == CampaignContentTypeVisual {
-		body = `{{ template "content" . }}`
+		// For visual campaigns or campaigns with no template, use a minimal template
+		// that includes the content and tracking pixel. TrackView . injects the
+		// open tracking pixel image.
+		body = `{{ template "content" . }}{{ TrackView . }}`
 	} else if !reContentTpl.MatchString(body) {
 		// Append the content placeholder if missing so that campaign Body is rendered.
 		body = body + "\n" + `{{ template "content" . }}`

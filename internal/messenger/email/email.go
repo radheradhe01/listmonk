@@ -276,7 +276,9 @@ func (e *Emailer) Flush() error {
 // Close closes the SMTP pools.
 func (e *Emailer) Close() error {
 	for _, s := range e.servers {
-		s.pool.Close()
+		if s.pool != nil {
+			s.pool.Close()
+		}
 	}
 	return nil
 }
