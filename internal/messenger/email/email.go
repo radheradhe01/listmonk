@@ -183,25 +183,46 @@ func (e *Emailer) Push(m models.Message) error {
 	// DEBUG: Log the complete message for troubleshooting
 	log.Printf("DEBUG: Complete email message:\n%s", message)
 
-	// 5. Send with TLS/STARTTLS (mirroring test_gmail.go's precise connection logic)
+	// 5. Send with TLS/STARTTLS
+	// Port 465 requires direct TLS connection, Port 587 uses STARTTLS
 	log.Printf("DEBUG: Connecting to %s:%s for %s...", host, port, recipientEmail)
 
-	c, err := smtp.Dial(host + ":" + port)
-	if err != nil {
-		log.Printf("DEBUG: FAILED to connect: %v", err)
-		return err
-	}
-	defer c.Close()
-
-	// Upgrade to TLS (mirroring test_gmail.go)
 	tlsconfig := &tls.Config{
 		InsecureSkipVerify: srv.TLSSkipVerify,
 		ServerName:         host,
 	}
-	if err := c.StartTLS(tlsconfig); err != nil {
-		log.Printf("DEBUG: FAILED to start TLS: %v", err)
-		return err
+
+	var c *smtp.Client
+
+	if port == "465" {
+		// Port 465: Direct TLS connection (SSL)
+		conn, err := tls.Dial("tcp", host+":"+port, tlsconfig)
+		if err != nil {
+			log.Printf("DEBUG: FAILED to connect with TLS: %v", err)
+			return err
+		}
+		c, err = smtp.NewClient(conn, host)
+		if err != nil {
+			conn.Close()
+			log.Printf("DEBUG: FAILED to create SMTP client: %v", err)
+			return err
+		}
+	} else {
+		// Port 587 or others: Plain connection + STARTTLS upgrade
+		var err error
+		c, err = smtp.Dial(host + ":" + port)
+		if err != nil {
+			log.Printf("DEBUG: FAILED to connect: %v", err)
+			return err
+		}
+		// Upgrade to TLS
+		if err := c.StartTLS(tlsconfig); err != nil {
+			c.Close()
+			log.Printf("DEBUG: FAILED to start TLS: %v", err)
+			return err
+		}
 	}
+	defer c.Close()
 
 	// Auth (mirroring test_gmail.go)
 	if err := c.Auth(auth); err != nil {
