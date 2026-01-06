@@ -48,11 +48,11 @@ build: $(BIN)
 $(STUFFBIN):
 	go install github.com/knadh/stuffbin/...
 
-$(FRONTEND_YARN_MODULES): frontend/package.json frontend/yarn.lock
+$(FRONTEND_YARN_MODULES): frontend/package.json
 	cd frontend && $(YARN) install
 	touch -c $(FRONTEND_YARN_MODULES)
 
-$(FRONTEND_EMAIL_BUILDER_YARN_MODULES): frontend/package.json frontend/yarn.lock
+$(FRONTEND_EMAIL_BUILDER_YARN_MODULES): $(FRONTEND_EMAIL_BUILDER)/package.json $(FRONTEND_EMAIL_BUILDER)/yarn.lock
 	cd $(FRONTEND_EMAIL_BUILDER) && $(YARN) install
 	touch -c $(FRONTEND_EMAIL_BUILDER_YARN_MODULES)
 
@@ -89,7 +89,7 @@ build-email-builder: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
 
 # Run the JS frontend server in dev mode.
 .PHONY: run-frontend
-run-frontend: $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
+run-frontend: $(FRONTEND_YARN_MODULES) $(FRONTEND_EMAIL_BUILDER_YARN_MODULES) $(FRONTEND_EMAIL_BUILDER_DIST_FINAL)
 	export VUE_APP_VERSION="${VERSION}" && cd frontend && $(YARN) dev
 
 # Run Go tests.
