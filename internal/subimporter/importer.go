@@ -18,9 +18,11 @@ import (
 	"log"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/knadh/listmonk/internal/i18n"
@@ -71,6 +73,7 @@ type Options struct {
 	UpsertStmt         *sql.Stmt
 	BlocklistStmt      *sql.Stmt
 	UpdateListDateStmt *sql.Stmt
+	CreateListStmt     *sql.Stmt
 	PostCB             func(subject string, data any) error
 
 	DomainBlocklist []string
@@ -130,7 +133,8 @@ var (
 		"name":       true,
 		"attributes": true}
 
-	regexCleanStr = regexp.MustCompile("[[:^ascii:]]")
+	regexCleanStr    = regexp.MustCompile("[[:^ascii:]]")
+	regexCleanSubStr = regexp.MustCompile("[^a-zA-Z0-9_.-]")
 )
 
 // New returns a new instance of Importer.
@@ -270,8 +274,28 @@ func (s *Session) Start() {
 		cur   = 0
 	)
 
+	// List batching.
+	var (
+		listNameBase       = regexCleanSubStr.ReplaceAllString(strings.TrimSuffix(filepath.Base(s.opt.Filename), filepath.Ext(s.opt.Filename)), "_")
+		listCounter        = 0
+		currentListID      = 0
+		subsInCurrentList  = 0
+		createListStmt     *sql.Stmt
+	)
+
+	// If there's no filename, use a timestamp.
+	if listNameBase == "" {
+		listNameBase = fmt.Sprintf("%d", time.Now().Unix())
+	}
+
+	// Override user selected lists if mode is subscribe.
 	listIDs := make([]int, len(s.opt.ListIDs))
 	copy(listIDs, s.opt.ListIDs)
+
+	if s.opt.Mode == ModeSubscribe {
+		// Reset lists to empty because we will be generating them.
+		listIDs = []int{}
+	}
 
 	for sub := range s.subQueue {
 		if cur == 0 {
@@ -284,6 +308,7 @@ func (s *Session) Start() {
 
 			if s.opt.Mode == ModeSubscribe {
 				stmt = tx.Stmt(s.im.opt.UpsertStmt)
+				createListStmt = tx.Stmt(s.im.opt.CreateListStmt)
 			} else {
 				stmt = tx.Stmt(s.im.opt.BlocklistStmt)
 			}
@@ -297,10 +322,41 @@ func (s *Session) Start() {
 		}
 
 		if s.opt.Mode == ModeSubscribe {
-			_, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs, pq.Array(listIDs), s.opt.SubStatus, s.opt.Overwrite)
+			// Check if we need a new list.
+			if currentListID == 0 || subsInCurrentList >= 50 {
+				listCounter++
+				subsInCurrentList = 0
+
+				// Name: {listNameBase}-{date}-batch-{listCounter}
+				// Tag: import-{listNameBase}
+				// Added seconds to avoid collisions on same-day re-runs.
+				listName := fmt.Sprintf("%s-%s-batch-%d", listNameBase, time.Now().Format("20060102-150405"), listCounter)
+				listTags := []string{fmt.Sprintf("import-%s", listNameBase)}
+
+				uuList, err := uuid.NewV4()
+				if err != nil {
+					s.log.Printf("error generating list UUID: %v", err)
+					tx.Rollback()
+					break
+				}
+
+				if err := createListStmt.QueryRow(uuList, listName, models.ListTypePrivate, models.ListOptinSingle, models.ListStatusActive, pq.StringArray(listTags), "").Scan(&currentListID); err != nil {
+					s.log.Printf("error creating list: %v", err)
+					tx.Rollback()
+					break
+				}
+				s.log.Printf("created list '%s' (id: %d)", listName, currentListID)
+			}
+
+			// Assign the current batch list to the subscriber.
+			// We overwrite any previous lists because we are strictly batching.
+			// We append the new list ID to the existing listIDs (which is empty).
+			_, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs, pq.Array([]int{currentListID}), s.opt.SubStatus, s.opt.Overwrite)
+			subsInCurrentList++
 		} else if s.opt.Mode == ModeBlocklist {
 			_, err = stmt.Exec(uu, sub.Email, sub.Name, sub.Attribs)
 		}
+
 		if err != nil {
 			s.log.Printf("error executing insert: %v", err)
 			tx.Rollback()
@@ -317,6 +373,9 @@ func (s *Session) Start() {
 			} else {
 				s.im.incrementImportCount(cur)
 				s.log.Printf("imported %d", total)
+
+				// Update list date? The lists are new, so they have fresh dates.
+				// But if we were appending, we would update them.
 			}
 
 			cur = 0

@@ -616,6 +616,7 @@ func initImporter(q *models.Queries, db *sqlx.DB, core *core.Core, i *i18n.I18n,
 			UpsertStmt:         q.UpsertSubscriber.Stmt,
 			BlocklistStmt:      q.UpsertBlocklistSubscriber.Stmt,
 			UpdateListDateStmt: q.UpdateListsDate.Stmt,
+			CreateListStmt:     q.CreateList.Stmt,
 
 			// Hook for triggering admin notifications and refreshing stats materialized
 			// views after a successful import.

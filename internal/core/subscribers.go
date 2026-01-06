@@ -300,13 +300,18 @@ func (c *Core) InsertSubscriber(sub models.Subscriber, listIDs []int, listUUIDs 
 		sub.Status = auth.UserStatusEnabled
 	}
 
-	// For pq.Array()
-	if listIDs == nil {
-		listIDs = []int{}
+	// Manual Batch Logic:
+	// Find the latest manual batch list.
+	// If it doesn't exist or is full (>= 50), create a new one.
+	// Assign this list to the subscriber, overriding any user input.
+	manualListID, err := c.getOrCreateManualBatchList()
+	if err != nil {
+		c.log.Printf("error getting/creating manual batch list: %v", err)
+		return models.Subscriber{}, false, echo.NewHTTPError(http.StatusInternalServerError,
+			c.i18n.Ts("globals.messages.errorCreating", "name", "{globals.terms.list}", "error", pqErrMsg(err)))
 	}
-	if listUUIDs == nil {
-		listUUIDs = []string{}
-	}
+	listIDs = []int{manualListID}
+	listUUIDs = []string{} // Clear UUIDs as we are setting the ID directly.
 
 	if err = c.q.InsertSubscriber.Get(&sub.ID,
 		sub.UUID,
@@ -658,4 +663,86 @@ func traverseQueryPlan(node map[string]any, tables map[string]struct{}) {
 			}
 		}
 	}
+}
+
+// getOrCreateManualBatchList finds the latest manual import list and returns its ID.
+// If it's full (>= 50) or doesn't exist, it creates a new one.
+// It includes a simple retry mechanism to handle potential race conditions during list creation.
+func (c *Core) getOrCreateManualBatchList() (int, error) {
+	const (
+		batchSize = 50
+		tagName   = "manual-import"
+		maxRetries = 3
+	)
+
+	for i := 0; i < maxRetries; i++ {
+		// Query to find the latest list with the tag "manual-import".
+		// We need the ID and the current subscriber count.
+		// Since `subscriber_count` in `lists` is not real-time (it comes from a materialized view),
+		// we should count the subscribers directly.
+		query := `
+			SELECT l.id, l.name, (SELECT COUNT(*) FROM subscriber_lists WHERE list_id = l.id) as count
+			FROM lists l
+			WHERE 'manual-import' = ANY(tags)
+			ORDER BY l.created_at DESC
+			LIMIT 1
+		`
+
+		var res struct {
+			ID    int    `db:"id"`
+			Name  string `db:"name"`
+			Count int    `db:"count"`
+		}
+
+		if err := c.db.Get(&res, query); err != nil {
+			if err != sql.ErrNoRows {
+				return 0, err
+			}
+			// No rows = no list exists. Fall through to create one.
+		}
+
+		// If the list exists and has space, return it.
+		if res.ID != 0 && res.Count < batchSize {
+			return res.ID, nil
+		}
+
+		// Determine the new batch number.
+		newBatchNum := 1
+		if res.ID != 0 {
+			// Try to parse the batch number from the name: manual-import-batch-N
+			var n int
+			if _, err := fmt.Sscanf(res.Name, "manual-import-batch-%d", &n); err == nil {
+				newBatchNum = n + 1
+			}
+		}
+
+		// Create a new list.
+		uu, err := uuid.NewV4()
+		if err != nil {
+			return 0, err
+		}
+
+		name := fmt.Sprintf("manual-import-batch-%d", newBatchNum)
+		var newID int
+		if err := c.q.CreateList.Get(&newID,
+			uu,
+			name,
+			models.ListTypePrivate,
+			models.ListOptinSingle,
+			models.ListStatusActive,
+			pq.StringArray([]string{tagName}),
+			"Auto-created list for manual subscriber additions",
+		); err != nil {
+			// If we hit a unique constraint violation (likely due to race condition), retry.
+			if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" { // unique_violation
+				c.log.Printf("collision creating list '%s', retrying...", name)
+				continue
+			}
+			return 0, err
+		}
+
+		return newID, nil
+	}
+
+	return 0, echo.NewHTTPError(http.StatusInternalServerError, "failed to create manual batch list after retries")
 }
