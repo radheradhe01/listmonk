@@ -4,59 +4,38 @@
 Docker for a production setup, visit the
 [docs](https://listmonk.app/docs/installation/#docker) instead.
 
-### Objective
-
-The purpose of this Docker suite for local development is to isolate all the dev
-dependencies in a Docker environment. The containers have a host volume mounted
-inside for the entire app directory. This helps us to not do a full
-`docker build` for every single local change, only restarting the Docker
-environment is enough.
-
-## Setting up a dev suite
-
-To spin up a local suite of:
-
-- PostgreSQL
-- Mailhog
-- Node.js frontend app
-- Golang backend app
-
-### Verify your config file
-
-The config file provided at `dev/config.toml` will be used when running the
-containerized development stack. Make sure the values set within are suitable
-for the feature you're trying to develop.
-
-### Setup DB
-
-Running this will build the appropriate images and initialize the database.
+## Quick Start
 
 ```bash
-make init-dev-docker
+cd dev
+./setup.sh
 ```
 
-### Start frontend and backend apps
+That's it! The script handles everything automatically.
 
-Running this start your local development stack.
+## Access Points
+
+| Service      | URL                     |
+|--------------|-------------------------|
+| Frontend     | http://localhost:8080   |
+| Backend API  | http://localhost:9000   |
+| MailHog      | http://localhost:8025   |
+| Adminer (DB) | http://localhost:8070   |
+
+## Common Commands
 
 ```bash
-make dev-docker
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+
+# Complete reset (removes all data)
+docker compose down -v && ./setup.sh
 ```
 
-Visit `http://localhost:8080` on your browser.
+## Development
 
-### Tear down
-
-This will tear down all the data, including DB.
-
-```bash
-make rm-dev-docker
-```
-
-### See local changes in action
-
-- Backend: Anytime you do a change to the Go app, it needs to be compiled. Just
-  run `make dev-docker` again and that should automatically handle it for you.
-- Frontend: Anytime you change the frontend code, you don't need to do anything.
-  Since `yarn` is watching for all the changes and we have mounted the code
-  inside the docker container, `yarn` server automatically restarts.
+- **Backend changes**: Restart the backend with `docker compose restart backend`
+- **Frontend changes**: Auto-reloads (hot reload enabled)

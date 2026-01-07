@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   adminer:
     image: adminer:4.8.1-standalone
@@ -8,6 +6,9 @@ services:
       - 8070:8080
     networks:
       - listmonk-dev
+    depends_on:
+      db:
+        condition: service_healthy
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -28,10 +29,33 @@ services:
       - POSTGRES_USER=listmonk-dev
       - POSTGRES_DB=listmonk-dev
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listmonk-dev -d listmonk-dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     volumes:
       - type: volume
         source: listmonk-dev-db
         target: /var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ../
+      dockerfile: dev/app.Dockerfile
+    command: ["make", "run-backend-docker"]
+    ports:
+      - "9000:9000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../:/app
+      - go-mod-cache:/go/pkg/mod/cache
+    networks:
+      - listmonk-dev
+    restart: unless-stopped
 
   front:
     build:
@@ -43,33 +67,20 @@ services:
     environment:
       - LISTMONK_API_URL=http://backend:9000
     depends_on:
-      - db
+      - backend
     volumes:
       - ../:/app
       - frontend-node-modules:/app/frontend/node_modules
       - email-builder-node-modules:/app/frontend/email-builder/node_modules
     networks:
       - listmonk-dev
-
-  backend:
-    build:
-      context: ../
-      dockerfile: dev/app.Dockerfile
-    command: ["make", "run-backend-docker"]
-    ports:
-      - "9000:9000"
-    depends_on:
-      - db
-    volumes:
-      - ../:/app
-      - $GOPATH/pkg/mod/cache:/go/pkg/mod/cache
-    networks:
-      - listmonk-dev
+    restart: unless-stopped
 
 volumes:
   listmonk-dev-db:
   frontend-node-modules:
   email-builder-node-modules:
+  go-mod-cache:
 
 networks:
   listmonk-dev:
