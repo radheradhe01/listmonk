@@ -1,7 +1,25 @@
 -- name: record-bounce
 -- Insert a bounce and count the bounces for the subscriber and either unsubscribe them,
-WITH sub AS (
+-- Automatically create subscriber if they don't exist (for bounce tracking)
+WITH existing_sub AS (
+    -- First try to find existing subscriber
     SELECT id, status FROM subscribers WHERE CASE WHEN $1 != '' THEN uuid = $1::UUID ELSE email = $2 END
+),
+new_sub AS (
+    -- If not found and email is provided, create a new subscriber for bounce tracking
+    INSERT INTO subscribers (uuid, email, status, name, attribs)
+    SELECT gen_random_uuid(), $2, 'enabled', COALESCE(NULLIF($2, ''), 'Bounced Subscriber'), '{}'::JSONB
+    WHERE $2 != '' 
+        AND NOT EXISTS (SELECT 1 FROM existing_sub)
+        AND NOT EXISTS (SELECT 1 FROM subscribers WHERE email = $2)
+    RETURNING id, status
+),
+sub AS (
+    -- Use existing subscriber if found, otherwise use newly created one
+    SELECT id, status FROM existing_sub
+    UNION ALL
+    SELECT id, status FROM new_sub
+    LIMIT 1
 ),
 campByUUID AS (
     SELECT id FROM campaigns WHERE $3 != '' AND uuid = $3::UUID LIMIT 1
