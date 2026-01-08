@@ -3,8 +3,26 @@
 WITH sub AS (
     SELECT id, status FROM subscribers WHERE CASE WHEN $1 != '' THEN uuid = $1::UUID ELSE email = $2 END
 ),
+campByUUID AS (
+    SELECT id FROM campaigns WHERE $3 != '' AND uuid = $3::UUID LIMIT 1
+),
+campBySubscriber AS (
+    SELECT c.id FROM campaigns c
+    INNER JOIN campaign_lists cl ON cl.campaign_id = c.id
+    INNER JOIN subscriber_lists sl ON sl.list_id = cl.list_id
+    WHERE sl.subscriber_id = (SELECT id FROM sub)
+        AND c.status IN ('finished', 'running', 'paused')
+        AND c.started_at IS NOT NULL
+        AND c.started_at >= NOW() - INTERVAL '7 days'
+        AND NOT EXISTS (SELECT 1 FROM campByUUID)
+    ORDER BY c.started_at DESC
+    LIMIT 1
+),
 camp AS (
-    SELECT id FROM campaigns WHERE $3 != '' AND uuid = $3::UUID
+    SELECT id FROM campByUUID
+    UNION ALL
+    SELECT id FROM campBySubscriber
+    LIMIT 1
 ),
 num AS (
     -- Add a +1 to include the current insertion that is happening.
@@ -23,7 +41,9 @@ bounce AS (
     -- Record the bounce if the subscriber is not already blocklisted;
     INSERT INTO bounces (subscriber_id, campaign_id, type, source, meta, created_at)
     SELECT (SELECT id FROM sub), (SELECT id FROM camp), $4, $5, $6, $7
-    WHERE NOT EXISTS (SELECT 1 WHERE (SELECT status FROM sub) = 'blocklisted' OR (SELECT num FROM num) > $8)
+    WHERE (SELECT id FROM sub) IS NOT NULL 
+        AND (SELECT status FROM sub) != 'blocklisted' 
+        AND (SELECT num FROM num) <= $8
 )
 -- This delete  will only run when $9 = 'delete' and the number of bounces exceed $8.
 DELETE FROM subscribers

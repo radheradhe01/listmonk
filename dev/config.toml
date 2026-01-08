@@ -22,3 +22,54 @@ max_lifetime = "300s"
 
 # Optional space separated Postgres DSN params. eg: "application_name=listmonk gssencmode=disable"
 params = ""
+
+# Bounce detection configuration
+[bounce]
+# Enable bounce webhooks (for SES, SendGrid, Postmark, ForwardEmail)
+webhooks_enabled = true
+
+# Amazon SES bounce webhook
+ses_enabled = false
+
+# SendGrid bounce webhook
+sendgrid_enabled = false
+# SendGrid public key for webhook signature verification (base64 encoded)
+# sendgrid_key = ""
+
+# Postmark bounce webhook
+[bounce.postmark]
+enabled = false
+# username = ""
+# password = ""
+
+# ForwardEmail bounce webhook
+[bounce.forwardemail]
+enabled = false
+# key = ""
+
+# POP3 mailbox for bounce scanning (alternative to webhooks)
+# Configure this if you want to scan a POP3 mailbox for bounce emails
+# IMPORTANT: Fill in your actual email server details below
+[[bounce.mailboxes]]
+enabled = true
+type = "pop"
+host = "pop.gmail.com"                    # Change to your POP3 server (pop.gmail.com, pop.yourdomain.com, etc.)
+port = 995                                 # Usually 995 for POP3 with TLS, 110 for without TLS
+auth_protocol = "userpass"
+username = "crownsolution.noc@gmail.com"    # CHANGE THIS: Your bounce email address
+password = "pvrh cipy meyv kxpd"             # CHANGE THIS: Your email password or app password
+return_path = "crownsolution.noc@gmail.com" # CHANGE THIS: Should match username
+scan_interval = "15m"                      # How often to check for bounces (15 minutes)
+tls_enabled = true
+tls_skip_verify = false
+
+# Bounce actions configuration
+# This defines what happens when a subscriber receives bounces
+# Actions: "none", "unsubscribe", "blocklist", "delete"
+[bounce.actions]
+# Soft bounces: temporary failures (e.g., mailbox full)
+soft = { count = 2, action = "none" }
+# Hard bounces: permanent failures (e.g., invalid email)
+hard = { count = 1, action = "blocklist" }
+# Complaints: spam complaints
+complaint = { count = 1, action = "blocklist" }

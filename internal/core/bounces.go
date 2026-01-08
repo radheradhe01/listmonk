@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/knadh/listmonk/models"
 	"github.com/labstack/echo/v4"
 	"github.com/lib/pq"
@@ -63,9 +64,26 @@ func (c *Core) RecordBounce(b models.Bounce) error {
 		return echo.NewHTTPError(http.StatusBadRequest, c.i18n.Ts("globals.messages.invalidData")+": "+b.Type)
 	}
 
-	_, err := c.q.RecordBounce.Exec(b.SubscriberUUID,
+	// Validate UUIDs - if invalid, set to empty string so fallback mechanism can work
+	subscriberUUID := b.SubscriberUUID
+	if subscriberUUID != "" {
+		if _, err := uuid.FromString(subscriberUUID); err != nil {
+			c.log.Printf("invalid subscriber UUID format: %s, using empty string for fallback", subscriberUUID)
+			subscriberUUID = ""
+		}
+	}
+
+	campaignUUID := b.CampaignUUID
+	if campaignUUID != "" {
+		if _, err := uuid.FromString(campaignUUID); err != nil {
+			c.log.Printf("invalid campaign UUID format: %s, using empty string for fallback", campaignUUID)
+			campaignUUID = ""
+		}
+	}
+
+	_, err := c.q.RecordBounce.Exec(subscriberUUID,
 		b.Email,
-		b.CampaignUUID,
+		campaignUUID,
 		b.Type,
 		b.Source,
 		b.Meta,
@@ -76,11 +94,18 @@ func (c *Core) RecordBounce(b models.Bounce) error {
 	if err != nil {
 		// Ignore the error if it complained of no subscriber.
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Column == "subscriber_id" {
-			c.log.Printf("bounced subscriber (%s / %s) not found", b.SubscriberUUID, b.Email)
+			c.log.Printf("bounced subscriber (%s / %s) not found", subscriberUUID, b.Email)
 			return nil
 		}
 
 		c.log.Printf("error recording bounce: %v", err)
+	} else {
+		// Log successful bounce recording for debugging
+		if campaignUUID != "" {
+			c.log.Printf("bounce recorded: email=%s, campaign_uuid=%s, type=%s", b.Email, campaignUUID, b.Type)
+		} else {
+			c.log.Printf("bounce recorded: email=%s, campaign_uuid=(fallback will be used), type=%s", b.Email, b.Type)
+		}
 	}
 
 	return err
